@@ -4,19 +4,38 @@
  *
  * @author Adnan Siddiqi
  */
-
+session_start();
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once 'config.php';
+
 
 $access_token = 'EAALZAvN8VjcEBAN1WfzKNVjmpUV5KYuLodHriThDixZA6qXBWrNvob4WpsDdPH5xj3HfTkWxYi6nnghKdZAg05PkKowRHGZAHoOZBMSxrZB2GMFOcXv3QaFa0O0mVs6zQNpLQ0NFaqCmokQioqDKVAJHDlx5MeuQvTH6PSeMjHnQZDZD';
 $verify_token = 'burger_bay';
+$query_internal = false;
+$selected_items = [];
 
+$db = new mysqli($config['SERVER'], $config['USER'], $config['PASSWORD'], $config['DATABASE']);
+
+if ($db->connect_errno > 0) {
+    die('Unable to connect to database [' . $db->connect_error . ']');
+}
+
+function getTextMessage($message, $recipient_id)
+{
+    $return_message = [];
+    $return_message['recipient'] = ['id' => $recipient_id];
+    $return_message['message'] = ['text' => $message];
+
+    return $return_message;
+}
 
 if (!empty($_REQUEST['hub_mode']) && $_REQUEST['hub_mode'] == 'subscribe' && $_REQUEST['hub_verify_token'] == $verify_token) {
     // Webhook setup request
     echo $_REQUEST['hub_challenge'];
 } else {
+
     $input = json_decode(file_get_contents("php://input"), true, 512, JSON_BIGINT_AS_STRING);
     $sender = $input['entry'][0]['messaging'][0]['sender']['id'];
     $message = '';
@@ -57,108 +76,88 @@ if (!empty($_REQUEST['hub_mode']) && $_REQUEST['hub_mode'] == 'subscribe' && $_R
         $return_message['message'] = ['attachment' => $menu_message];
 
 
-    }
-
-    $query_internal = false;
-    if ($message == 'CURRENT_MENU') {
+    } elseif ($message == 'CURRENT_MENU') {
         $url = '../site/pull.php?mode=' . $message;
         $query_internal = true;
-    } else {
-        $url = '../site/pull.php?mode=' . $message;
-        $query_internal = true;
-    }
-    /**
-     * Querying Internel Database about items
-     */
-    $request = Requests::get('http://0e6eb01a.ngrok.io/bots/Burger-Bay-Facebook-Bot/site/pull.php?mode=CURRENT_MENU',
-        $headers);
+    } elseif (strpos($message, 'ID') !== false) {
+        //print "GET THE ITEM";
+        $item = json_decode($message, true);
+        //print_r($item);
+        $return_message = getTextMessage('You selected ' . $item['title'], $sender);
+        $selected_items[] = $item['title'];
+        $_SESSION['BB_ORDER'] = $selected_items;
+        $query = "INSERT INTO orders(item_id,status,sender_id) VALUES ('{$item['ID']}',-1,$sender)";
+        $res = $db->query($query) or die(mysqli_error($db));
 
-    //print_r($request->body);
-    $elements = $request->body;
-    $elements = json_decode($elements,true);
-    if ($query_internal) {
+        $query_internal = false;
+    } elseif ($message == 'AM_DONE') {
+
+        $return_message['recipient'] = ['id' => $sender];
         $menu_message = [];
+        $buttons = [];
+        $buttons[] = ['type' => 'postback', 'title' => 'Yes', 'payload' => 'ORDER_YES'];
+        $buttons[] = ['type' => 'postback', 'title' => 'No', 'payload' => 'ORDER_NO'];
         $menu_message = [
             'type'    => 'template',
-            'payload'       => ['template_type' => 'generic', 'elements' => $elements]
+            'payload' => [
+                'template_type' => 'button',
+                'text'          => 'Do you want to see your order?',
+                'buttons'       => $buttons
+            ]
         ];
 
         $return_message['message'] = ['attachment' => $menu_message];
-    }
+    } elseif ($message == 'ORDER_YES') {
+        $query = "select title from items i inner join orders o ON i.id = o.item_id where sender_id = '$sender'";
+        $res = $db->query($query) or die(mysqli_error($db));
+        $selected_items = '';
 
+        while($row = $res->fetch_assoc()) {
+            $selected_items.= $row['title'].',';
+            $return_message = getTextMessage($selected_items, $sender);
+        }
+
+    } elseif ($message == 'ORDER_NO') {
+        $return_message = getTextMessage("Alright! Hope you'd try our meal someday.", $sender);
+    }
+    else {
+        $return_message = getTextMessage("huh I did not get you. Type 'help' to learn further about how can I serve you.",
+            $sender);
+    }
+    /**
+     * Querying Internal Database about items
+     */
+
+
+    if ($query_internal) {
+
+        $request = Requests::get('http://c323735f.ngrok.io/bots/Burger-Bay-Facebook-Bot/site/pull.php?mode=CURRENT_MENU',
+            $headers);
+        $elements = $request->body;
+        $elements = json_decode($elements, true);
+        $menu_message = [];
+        $menu_message = [
+            'type'    => 'template',
+            'payload' => ['template_type' => 'generic', 'elements' => $elements]
+        ];
+
+        $return_message['message'] = ['attachment' => $menu_message];
+
+    }
 
     /**
      * Prepare Message to be Send to User
      */
 
-    $j = '{
-  "recipient":{
-    "id":"1006627549374064"
-  },
-  "message":{
-    "attachment":{
-      "type":"template",
-      "payload":{
-        "template_type":"generic",
-        "elements":[
-          {
-            "title":"Classic White T-Shirt",
-            "image_url":"http://petersapparel.parseapp.com/img/item100-thumb.png",
-            "subtitle":"Soft white cotton t-shirt is back in style",
-            "buttons":[
-              {
-                "type":"web_url",
-                "url":"https://petersapparel.parseapp.com/view_item?item_id=100",
-                "title":"View Item"
-              },
-              {
-                "type":"web_url",
-                "url":"https://petersapparel.parseapp.com/buy_item?item_id=100",
-                "title":"Buy Item"
-              },
-              {
-                "type":"postback",
-                "title":"Bookmark Item",
-                "payload":"USER_DEFINED_PAYLOAD_FOR_ITEM100"
-              }
-            ]
-          },
-          {
-            "title":"Classic Grey T-Shirt",
-            "image_url":"http://petersapparel.parseapp.com/img/item101-thumb.png",
-            "subtitle":"Soft gray cotton t-shirt is back in style",
-            "buttons":[
-              {
-                "type":"web_url",
-                "url":"https://petersapparel.parseapp.com/view_item?item_id=101",
-                "title":"View Item"
-              },
-              {
-                "type":"web_url",
-                "url":"https://petersapparel.parseapp.com/buy_item?item_id=101",
-                "title":"Buy Item"
-              },
-              {
-                "type":"postback",
-                "title":"Bookmark Item",
-                "payload":"USER_DEFINED_PAYLOAD_FOR_ITEM101"
-              }
-            ]
-          }
-        ]
-      }
+
+    if (isset($return_message['message']['text']) && $return_message['message']['text'] != '') {
+        $url = 'https://graph.facebook.com/v2.6/me/messages?access_token=' . $access_token;
+        $request = Requests::post($url, $headers, json_encode($return_message));
+        print_r($request->body);
+    } else {
+        $url = 'https://graph.facebook.com/v2.6/me/messages?access_token=' . $access_token;
+        $request = Requests::post($url, $headers, json_encode($return_message));
+        print_r($request->body);
     }
-  }
-}';
-
-    //print_r($return_message);
-
-//    print_r($menu_message);
-    //echo nl2br(json_encode($return_message));
-
-//    //API Url
-    $url = 'https://graph.facebook.com/v2.6/me/messages?access_token=' . $access_token;
-    $request = Requests::post($url, $headers,json_encode($return_message));
-    print_r($request->body);
 
 }
