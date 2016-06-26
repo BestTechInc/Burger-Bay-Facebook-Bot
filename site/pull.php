@@ -4,10 +4,13 @@ error_reporting(E_ALL);
 require_once 'config.php';
 
 
-function get_buttons($id)
+function get_buttons($id, $title)
 {
-    $buttons[] = ['type' => 'postback', 'title' => 'Select item', 'payload' => json_encode(['ID' => $id])];
-    $buttons[] = ['type' => 'postback', 'title' => 'I am done', 'payload' => "DONE"];
+    $buttons[] = ['type'    => 'postback',
+                  'title'   => 'Select item',
+                  'payload' => json_encode(['ID' => $id, 'title' => $title])
+    ];
+    $buttons[] = ['type' => 'postback', 'title' => 'I am done', 'payload' => "AM_DONE"];
 
     return $buttons;
 }
@@ -26,9 +29,9 @@ $buttons = [];
 while ($row = $res->fetch_assoc()) {
     $items[] = [
         'title'     => $row['title'],
-        'image_url' => 'http://0e6eb01a.ngrok.io/bots/Burger-Bay-Facebook-Bot/site/images/' . $row['image_url'],
+        'image_url' => 'http://c323735f.ngrok.io/bots/Burger-Bay-Facebook-Bot/site/images/' . $row['image_url'],
         'subtitle'  => substr($row['description'], 0, 100),
-        'buttons'   => get_buttons($row['id'])
+        'buttons'   => get_buttons($row['id'],$row['title'])
     ];
 }
 
